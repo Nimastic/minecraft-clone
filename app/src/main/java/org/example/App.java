@@ -1,10 +1,12 @@
 package org.example;
 
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWCursorPosCallback;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.glfw.GLFWFramebufferSizeCallback;
+import org.lwjgl.glfw.GLFWMouseButtonCallback;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
@@ -12,6 +14,10 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
+import FastNoiseLite.FastNoiseLite;
 
 public class App {
     private long window;
@@ -23,6 +29,38 @@ public class App {
     private boolean firstMouse = true;
     private float lastX = windowWidth / 2.0f;
     private float lastY = windowHeight / 2.0f;
+    private List<Vector3f> blocks = new ArrayList<>();
+    private float cameraSpeed = 0.05f;
+
+    private int crosshairVao;
+
+    private void setupCrosshair() {
+        float[] vertices = {
+            -0.01f,  0.0f, 0.0f,
+             0.01f,  0.0f, 0.0f,
+             0.0f, -0.01f, 0.0f,
+             0.0f,  0.01f, 0.0f,
+        };
+    
+        crosshairVao = GL30.glGenVertexArrays();
+        int vbo = GL20.glGenBuffers();
+    
+        GL30.glBindVertexArray(crosshairVao);
+        GL20.glBindBuffer(GL20.GL_ARRAY_BUFFER, vbo);
+        FloatBuffer vertexBuffer = MemoryUtil.memAllocFloat(vertices.length);
+        vertexBuffer.put(vertices).flip();
+        GL20.glBufferData(GL20.GL_ARRAY_BUFFER, vertexBuffer, GL20.GL_STATIC_DRAW);
+        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 3 * 4, 0);
+        GL20.glEnableVertexAttribArray(0);
+        MemoryUtil.memFree(vertexBuffer);
+    }
+    
+    private void renderCrosshair() {
+        GL30.glBindVertexArray(crosshairVao);
+        GL11.glDrawArrays(GL11.GL_LINES, 0, 4);
+        GL30.glBindVertexArray(0);
+    }
+
 
     public void run() {
         init();
@@ -51,7 +89,7 @@ public class App {
         GLFW.glfwWindowHint(GLFW.GLFW_RESIZABLE, GLFW.GLFW_TRUE);
 
         // Create the window
-        window = GLFW.glfwCreateWindow(windowWidth, windowHeight, "3D Flat Land", 0, 0);
+        window = GLFW.glfwCreateWindow(windowWidth, windowHeight, "3D Cube", 0, 0);
         if (window == 0L) {
             throw new RuntimeException("Failed to create the GLFW window");
         }
@@ -75,6 +113,9 @@ public class App {
 
         // Initialize camera
         camera = new Camera();
+
+        // Initialize crosshair
+        setupCrosshair();
 
         // Set the framebuffer size callback
         GLFW.glfwSetFramebufferSizeCallback(window, new GLFWFramebufferSizeCallback() {
@@ -106,11 +147,28 @@ public class App {
             }
         });
 
+        // Set the mouse button callback
+        GLFW.glfwSetMouseButtonCallback(window, new GLFWMouseButtonCallback() {
+            @Override
+            public void invoke(long window, int button, int action, int mods) {
+                if (action == GLFW.GLFW_PRESS) {
+                    if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                        addBlock();
+                    } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                        removeBlock();
+                    }
+                }
+            }
+        });
+
         // Capture the mouse
         GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
 
         // Set the initial viewport
         GL11.glViewport(0, 0, windowWidth, windowHeight);
+
+        // Generate the chunk
+        generateChunk();
     }
 
     private void setupShaders() {
@@ -156,8 +214,8 @@ public class App {
     }
 
     private void setupVertexData() {
-        // Define vertices for a flat land (grid of quads)
-        float[] vertices = generateFlatLandVertices(10, 10);
+        // Define vertices for a cube
+        float[] vertices = generateCubeVertices();
 
         vao = GL30.glGenVertexArrays();
         int vbo = GL20.glGenBuffers();
@@ -172,8 +230,10 @@ public class App {
         GL20.glBufferData(GL20.GL_ARRAY_BUFFER, vertexBuffer, GL20.GL_STATIC_DRAW);
 
         // Define vertex attributes
-        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 3 * 4, 0);
+        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 6 * 4, 0);
         GL20.glEnableVertexAttribArray(0);
+        GL20.glVertexAttribPointer(1, 3, GL11.GL_FLOAT, false, 6 * 4, 3 * 4);
+        GL20.glEnableVertexAttribArray(1);
 
         // Unbind VBO and VAO
         GL20.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0);
@@ -183,47 +243,51 @@ public class App {
         MemoryUtil.memFree(vertexBuffer);
     }
 
-    private float[] generateFlatLandVertices(int width, int height) {
-        int numVertices = width * height * 6; // 6 vertices per quad (2 triangles)
-        float[] vertices = new float[numVertices * 3]; // 3 coordinates per vertex
+    private float[] generateCubeVertices() {
+        return new float[]{
+            // positions          // colors
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
+             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
+             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
+             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
+            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  // yellow
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
 
-        int index = 0;
-        for (int z = 0; z < height; z++) {
-            for (int x = 0; x < width; x++) {
-                float x0 = x;
-                float x1 = x + 1;
-                float z0 = z;
-                float z1 = z + 1;
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
+             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
+             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
+             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
+            -0.5f,  0.5f,  0.5f,  0.5f, 1.0f, 0.5f,  // light green
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
 
-                // First triangle
-                vertices[index++] = x0;
-                vertices[index++] = 0.0f;
-                vertices[index++] = z0;
+            -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  // green
+            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  // yellow
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
+            -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  // green
 
-                vertices[index++] = x1;
-                vertices[index++] = 0.0f;
-                vertices[index++] = z0;
+             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
+             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
+             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
+             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
+             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
+             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
 
-                vertices[index++] = x0;
-                vertices[index++] = 0.0f;
-                vertices[index++] = z1;
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
+             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
+             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
+             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
 
-                // Second triangle
-                vertices[index++] = x1;
-                vertices[index++] = 0.0f;
-                vertices[index++] = z0;
-
-                vertices[index++] = x1;
-                vertices[index++] = 0.0f;
-                vertices[index++] = z1;
-
-                vertices[index++] = x0;
-                vertices[index++] = 0.0f;
-                vertices[index++] = z1;
-            }
-        }
-
-        return vertices;
+            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  // yellow
+             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
+             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
+             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
+            -0.5f,  0.5f,  0.5f,  0.5f, 1.0f, 0.5f,  // light green
+            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f   // yellow
+        };
     }
 
     private void loop() {
@@ -247,8 +311,8 @@ public class App {
             int viewLoc = GL20.glGetUniformLocation(shaderProgram, "view");
             int projLoc = GL20.glGetUniformLocation(shaderProgram, "projection");
 
-            Matrix4f model = new Matrix4f().identity();
-            GL20.glUniformMatrix4fv(modelLoc, false, model.get(new float[16]));
+            // Matrix4f model = new Matrix4f().identity();
+            // GL20.glUniformMatrix4fv(modelLoc, false, model.get(new float[16]));
 
             Matrix4f view = camera.getViewMatrix();
             GL20.glUniformMatrix4fv(viewLoc, false, view.get(new float[16]));
@@ -256,12 +320,21 @@ public class App {
             Matrix4f projection = new Matrix4f().perspective((float) Math.toRadians(45.0f), (float) windowWidth / (float) windowHeight, 0.1f, 100.0f);
             GL20.glUniformMatrix4fv(projLoc, false, projection.get(new float[16]));
 
-            // Bind the VAO
-            GL30.glBindVertexArray(vao);
-            // Draw the flat land
-            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6 * 10 * 10); // 6 vertices per quad, 10x10 grid
-            // Unbind the VAO
-            GL30.glBindVertexArray(0);
+            // Render each block
+            for (Vector3f block : blocks) {
+                Matrix4f model = new Matrix4f().translate(block);
+                GL20.glUniformMatrix4fv(modelLoc, false, model.get(new float[16]));
+
+                // Bind the VAO
+                GL30.glBindVertexArray(vao);
+                // Draw the cube
+                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 36); // 36 vertices for a cube (6 faces * 2 triangles * 3 vertices)
+                // Unbind the VAO
+                GL30.glBindVertexArray(0);
+            }
+
+            // Render the crosshair
+            renderCrosshair();
 
             // Swap the color buffers
             GLFW.glfwSwapBuffers(window);
@@ -292,6 +365,92 @@ public class App {
             camera.processKeyboard(Camera.Movement.DOWN, cameraSpeed);
         }
     }
+
+    private void generateChunk() {
+        FastNoiseLite noise = new FastNoiseLite();
+        noise.SetNoiseType(FastNoiseLite.NoiseType.Perlin);
+        noise.SetFrequency(0.1f);
+
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                int height = (int) (noise.GetNoise(x, z) * 8 + 8); // Generate height value between 0 and 16
+                for (int y = 0; y < height; y++) {
+                    blocks.add(new Vector3f(x, y, z));
+                }
+            }
+        }
+    }
+
+    private Vector3f rayCast() {
+        float step = 0.1f;
+        float maxDist = 5.0f;
+        Vector3f rayOrigin = camera.getPosition();
+        Vector3f rayDir = camera.getFront().normalize();
+        System.out.println("Ray Origin: " + rayOrigin + " Ray Direction: " + rayDir);
+    
+        for (float t = 0; t < maxDist; t += step) {
+            Vector3f pos = new Vector3f(rayOrigin).add(rayDir.mul(t, new Vector3f()), new Vector3f());
+            Vector3f blockPos = new Vector3f(Math.round(pos.x), Math.round(pos.y), Math.round(pos.z));
+            for (Vector3f block : blocks) {
+                if (block.equals(blockPos)) {
+                    System.out.println("Hit block at: " + blockPos);
+                    return block;
+                }
+            }
+        }
+        System.out.println("No block hit");
+        return null;
+    }
+    
+    private void addBlock() {
+        Vector3f block = rayCast();
+        if (block != null) {
+            Vector3f normal = getBlockFaceNormal(block);
+            if (normal != null) {
+                Vector3f newBlock = new Vector3f(block).add(normal);
+                if (!blocks.contains(newBlock)) {
+                    blocks.add(newBlock);
+                    System.out.println("Added block at: " + newBlock);
+                }
+            }
+        }
+    }
+    
+    private void removeBlock() {
+        Vector3f block = rayCast();
+        if (block != null) {
+            blocks.remove(block);
+            System.out.println("Removed block at: " + block);
+        }
+    }
+    
+    private Vector3f getBlockFaceNormal(Vector3f block) {
+        Vector3f rayOrigin = camera.getPosition();
+        Vector3f rayDirection = camera.getFront().normalize();
+    
+        Vector3f[] faces = {
+            new Vector3f(1, 0, 0), new Vector3f(-1, 0, 0),
+            new Vector3f(0, 1, 0), new Vector3f(0, -1, 0),
+            new Vector3f(0, 0, 1), new Vector3f(0, 0, -1)
+        };
+    
+        for (Vector3f face : faces) {
+            Vector3f planePoint = new Vector3f(block).add(face);
+            Vector3f planeNormal = new Vector3f(face);
+            float distance = planePoint.sub(rayOrigin, new Vector3f()).dot(planeNormal) / rayDirection.dot(planeNormal);
+    
+            if (distance > 0 && distance < 5.0f) {
+                Vector3f intersection = new Vector3f(rayOrigin).add(rayDirection.mul(distance, new Vector3f()), new Vector3f());
+                if (Math.abs(intersection.x - planePoint.x) < 0.5 && Math.abs(intersection.y - planePoint.y) < 0.5 && Math.abs(intersection.z - planePoint.z) < 0.5) {
+                    System.out.println("Face normal: " + face);
+                    return face;
+                }
+            }
+        }
+        System.out.println("No face normal found");
+        return null;
+    }
+    
 
     public static void main(String[] args) {
         new App().run();

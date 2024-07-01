@@ -1,7 +1,9 @@
 #version 330 core
+in vec3 ourColor;
+
 out vec4 FragColor;
 
 void main()
 {
-    FragColor = vec4(0.3, 0.8, 0.3, 1.0); // Green color for the flat land
+    FragColor = vec4(ourColor, 1.0);
 }

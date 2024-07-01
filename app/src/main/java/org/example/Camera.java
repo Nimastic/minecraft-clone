@@ -33,6 +33,14 @@ public class Camera {
         return new Matrix4f().lookAt(position, position.add(front, new Vector3f()), up);
     }
 
+    public Vector3f getPosition() {
+        return position;
+    }
+
+    public Vector3f getFront() {
+        return front;
+    }
+
     public void processKeyboard(Movement direction, float deltaTime) {
         float velocity = deltaTime * 2.5f;
         if (direction == Movement.FORWARD) {
