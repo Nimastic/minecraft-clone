@@ -1,11 +1,11 @@
-##Prerequisites
+###Prerequisites
 Before you start, make sure you have the following installed on your system:
 
 Java Development Kit (JDK) 8 or later
 Git
 Gradle
 
-##Project Structure
+###Project Structure
 
 ```
 minecraft-clone/
