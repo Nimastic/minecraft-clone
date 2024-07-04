@@ -31,3 +31,8 @@ minecraft-clone/
 ├── build.gradle.kts
 ├── settings.gradle.kts
 ```
+
+```
+./gradlew build
+./gradlew run
+```
