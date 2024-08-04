@@ -11,6 +11,7 @@ import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.FloatBuffer;
@@ -18,6 +19,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import FastNoiseLite.FastNoiseLite;
+
+import org.lwjgl.stb.STBImage;
+import org.lwjgl.system.MemoryStack;
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 
 public class App {
     private long window;
@@ -33,6 +39,8 @@ public class App {
     private float cameraSpeed = 0.05f;
 
     private int crosshairVao;
+    private int textureID;
+
 
     private void setupCrosshair() {
         float[] vertices = {
@@ -61,6 +69,42 @@ public class App {
         GL30.glBindVertexArray(0);
     }
 
+    public int loadTexture(String path) {
+        int textureID = GL11.glGenTextures();
+        
+        int textureFront = loadTexture("app/src/main/resources/grass_block_side.png");
+        int textureBack = loadTexture("app/src/main/resources/grass_block_side.png");
+        int textureLeft = loadTexture("app/src/main/resources/grass_block_side.png");
+        int textureRight = loadTexture("app/src/main/resources/grass_block_side.png");
+        int textureTop = loadTexture("app/src/main/resources/grass_block_top.png");
+        int textureBottom = loadTexture("app/src/main/resources/grass_block_bottom.png");
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureID);
+    
+        // Set texture parameters
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+    
+        // Load image
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer width = stack.mallocInt(1);
+            IntBuffer height = stack.mallocInt(1);
+            IntBuffer channels = stack.mallocInt(1);
+    
+            ByteBuffer data = STBImage.stbi_load(path, width, height, channels, 4);
+            if (data == null) {
+                throw new RuntimeException("Failed to load texture: " + STBImage.stbi_failure_reason());
+            }
+    
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width.get(), height.get(), 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data);
+            STBImage.stbi_image_free(data);
+        }
+    
+        return textureID;
+    }
+
 
     public void run() {
         init();
@@ -77,99 +121,94 @@ public class App {
     private void init() {
         // Set up an error callback
         GLFWErrorCallback.createPrint(System.err).set();
-
+    
         // Initialize GLFW
         if (!GLFW.glfwInit()) {
             throw new IllegalStateException("Unable to initialize GLFW");
         }
-
+    
         // Configure GLFW
         GLFW.glfwDefaultWindowHints();
         GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GLFW.GLFW_FALSE);
         GLFW.glfwWindowHint(GLFW.GLFW_RESIZABLE, GLFW.GLFW_TRUE);
-
+    
         // Create the window
         window = GLFW.glfwCreateWindow(windowWidth, windowHeight, "3D Cube", 0, 0);
         if (window == 0L) {
             throw new RuntimeException("Failed to create the GLFW window");
         }
-
+    
         // Make the OpenGL context current
         GLFW.glfwMakeContextCurrent(window);
         // Enable v-sync
         GLFW.glfwSwapInterval(1);
-
+    
         // Make the window visible
         GLFW.glfwShowWindow(window);
-
+    
         // Initialize GL capabilities
         GL.createCapabilities();
-
+    
         // Set up the shaders
         setupShaders();
-
+    
         // Set up the vertex data
         setupVertexData();
-
+    
         // Initialize camera
         camera = new Camera();
-
+    
         // Initialize crosshair
         setupCrosshair();
-
+    
         // Set the framebuffer size callback
-        GLFW.glfwSetFramebufferSizeCallback(window, new GLFWFramebufferSizeCallback() {
-            @Override
-            public void invoke(long window, int width, int height) {
-                windowWidth = width;
-                windowHeight = height;
-                GL11.glViewport(0, 0, width, height);
-            }
+        GLFW.glfwSetFramebufferSizeCallback(window, (window, width, height) -> {
+            windowWidth = width;
+            windowHeight = height;
+            GL11.glViewport(0, 0, width, height);
         });
-
+    
         // Set the cursor position callback
-        GLFW.glfwSetCursorPosCallback(window, new GLFWCursorPosCallback() {
-            @Override
-            public void invoke(long window, double xpos, double ypos) {
-                if (firstMouse) {
-                    lastX = (float) xpos;
-                    lastY = (float) ypos;
-                    firstMouse = false;
-                }
-
-                float xOffset = (float) xpos - lastX;
-                float yOffset = lastY - (float) ypos; // Reversed since y-coordinates go from bottom to top
-
+        GLFW.glfwSetCursorPosCallback(window, (window, xpos, ypos) -> {
+            if (firstMouse) {
                 lastX = (float) xpos;
                 lastY = (float) ypos;
-
-                camera.processMouseMovement(xOffset, yOffset);
+                firstMouse = false;
             }
+    
+            float xOffset = (float) xpos - lastX;
+            float yOffset = lastY - (float) ypos; // Reversed since y-coordinates go from bottom to top
+    
+            lastX = (float) xpos;
+            lastY = (float) ypos;
+    
+            camera.processMouseMovement(xOffset, yOffset);
         });
-
+    
         // Set the mouse button callback
-        GLFW.glfwSetMouseButtonCallback(window, new GLFWMouseButtonCallback() {
-            @Override
-            public void invoke(long window, int button, int action, int mods) {
-                if (action == GLFW.GLFW_PRESS) {
-                    if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                        addBlock();
-                    } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-                        removeBlock();
-                    }
+        GLFW.glfwSetMouseButtonCallback(window, (window, button, action, mods) -> {
+            if (action == GLFW.GLFW_PRESS) {
+                if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                    addBlock();
+                } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                    removeBlock();
                 }
             }
         });
-
+    
         // Capture the mouse
         GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
-
+    
         // Set the initial viewport
         GL11.glViewport(0, 0, windowWidth, windowHeight);
-
+    
         // Generate the chunk
         generateChunk();
+    
+        // Load texture
+        loadTexture("grass_block.png");
     }
+    
 
     private void setupShaders() {
         // Load shader source code from files
@@ -214,135 +253,124 @@ public class App {
     }
 
     private void setupVertexData() {
-        // Define vertices for a cube
         float[] vertices = generateCubeVertices();
-
+    
         vao = GL30.glGenVertexArrays();
         int vbo = GL20.glGenBuffers();
-
+    
         GL30.glBindVertexArray(vao);
-
-        // Bind VBO
+    
         GL20.glBindBuffer(GL20.GL_ARRAY_BUFFER, vbo);
-        // Transfer vertex data to VBO
         FloatBuffer vertexBuffer = MemoryUtil.memAllocFloat(vertices.length);
         vertexBuffer.put(vertices).flip();
         GL20.glBufferData(GL20.GL_ARRAY_BUFFER, vertexBuffer, GL20.GL_STATIC_DRAW);
-
-        // Define vertex attributes
-        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 6 * 4, 0);
+    
+        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 8 * 4, 0);
         GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(1, 3, GL11.GL_FLOAT, false, 6 * 4, 3 * 4);
+        GL20.glVertexAttribPointer(1, 3, GL11.GL_FLOAT, false, 8 * 4, 3 * 4);
         GL20.glEnableVertexAttribArray(1);
-
-        // Unbind VBO and VAO
+        GL20.glVertexAttribPointer(2, 2, GL11.GL_FLOAT, false, 8 * 4, 6 * 4);
+        GL20.glEnableVertexAttribArray(2);
+    
         GL20.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0);
         GL30.glBindVertexArray(0);
-
-        // Free the allocated memory
+    
         MemoryUtil.memFree(vertexBuffer);
     }
 
     private float[] generateCubeVertices() {
         return new float[]{
-            // positions          // colors
-            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
-             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
-             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
-             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
-            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  // yellow
-            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
-
-            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
-             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
-             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
-             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
-            -0.5f,  0.5f,  0.5f,  0.5f, 1.0f, 0.5f,  // light green
-            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
-
-            -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  // green
-            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  // yellow
-            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
-            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
-            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
-            -0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  // green
-
-             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
-             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
-             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
-             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
-             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
-             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
-
-            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
-             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  // green
-             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
-             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  // cyan
-            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  // magenta
-            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  // red
-
-            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,  // yellow
-             0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  // blue
-             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
-             0.5f,  0.5f,  0.5f,  1.0f, 0.5f, 0.5f,  // pink
-            -0.5f,  0.5f,  0.5f,  0.5f, 1.0f, 0.5f,  // light green
-            -0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f   // yellow
+            // positions          // colors        // texture coords
+            // Front face (3)
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,  0.25f, 0.50f,  // bottom-left
+             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  0.50f, 0.50f,  // bottom-right
+             0.5f,  0.5f,  0.5f,  0.0f, 0.0f, 1.0f,  0.50f, 0.75f,  // top-right
+             0.5f,  0.5f,  0.5f,  0.0f, 0.0f, 1.0f,  0.50f, 0.75f,  // top-right
+            -0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.25f, 0.75f,  // top-left
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,  0.25f, 0.50f,  // bottom-left
+    
+            // Back face (1)
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,  0.25f, 0.25f,  // bottom-left
+             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 1.0f,  0.50f, 0.25f,  // bottom-right
+             0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 1.0f,  0.50f, 0.50f,  // top-right
+             0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 1.0f,  0.50f, 0.50f,  // top-right
+            -0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,  0.25f, 0.50f,  // top-left
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,  0.25f, 0.25f,  // bottom-left
+    
+            // Left face (2)
+            -0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.00f, 0.50f,  // top-right
+            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  0.25f, 0.50f,  // top-left
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,  0.25f, 0.25f,  // bottom-left
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,  0.25f, 0.25f,  // bottom-left
+            -0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,  0.00f, 0.25f,  // bottom-right
+            -0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.00f, 0.50f,  // top-right
+    
+            // Right face (4)
+             0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 1.0f,  0.50f, 0.50f,  // top-left
+             0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 1.0f,  0.75f, 0.50f,  // top-right
+             0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,  0.75f, 0.25f,  // bottom-right
+             0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 1.0f,  0.75f, 0.25f,  // bottom-right
+             0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,  0.50f, 0.25f,  // bottom-left
+             0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 1.0f,  0.50f, 0.50f,  // top-left
+    
+            // Top face (5)
+            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 1.0f,  0.25f, 0.75f,  // top-left
+             0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 1.0f,  0.50f, 0.75f,  // top-right
+             0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  0.50f, 1.00f,  // bottom-right
+             0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,  0.50f, 1.00f,  // bottom-right
+            -0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.25f, 1.00f,  // bottom-left
+            -0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 1.0f,  0.25f, 0.75f,  // top-left
+    
+            // Bottom face (6)
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  0.25f, 0.00f,  // top-left
+             0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  0.50f, 0.00f,  // top-right
+             0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f,  0.50f, 0.25f,  // bottom-right
+             0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f,  0.50f, 0.25f,  // bottom-right
+            -0.5f, -0.5f,  0.5f,  1.0f, 1.0f, 0.0f,  0.25f, 0.25f,  // bottom-left
+            -0.5f, -0.5f, -0.5f,  1.0f, 0.0f, 0.0f,  0.25f, 0.00f   // top-left
         };
     }
 
     private void loop() {
-        // Set the clear color
         GL11.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-        // Enable depth testing
         GL11.glEnable(GL11.GL_DEPTH_TEST);
-
+    
         while (!GLFW.glfwWindowShouldClose(window)) {
-            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT); // Clear the framebuffer
-
-            // Handle input
+            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+    
             handleInput();
-
-            // Use the shader program
             GL20.glUseProgram(shaderProgram);
-
-            // Set the view and projection matrices
+    
             int modelLoc = GL20.glGetUniformLocation(shaderProgram, "model");
             int viewLoc = GL20.glGetUniformLocation(shaderProgram, "view");
             int projLoc = GL20.glGetUniformLocation(shaderProgram, "projection");
-
-            // Matrix4f model = new Matrix4f().identity();
-            // GL20.glUniformMatrix4fv(modelLoc, false, model.get(new float[16]));
-
+    
             Matrix4f view = camera.getViewMatrix();
             GL20.glUniformMatrix4fv(viewLoc, false, view.get(new float[16]));
-
+    
             Matrix4f projection = new Matrix4f().perspective((float) Math.toRadians(45.0f), (float) windowWidth / (float) windowHeight, 0.1f, 100.0f);
             GL20.glUniformMatrix4fv(projLoc, false, projection.get(new float[16]));
-
-            // Render each block
+    
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureID);
+    
             for (Vector3f block : blocks) {
                 Matrix4f model = new Matrix4f().translate(block);
                 GL20.glUniformMatrix4fv(modelLoc, false, model.get(new float[16]));
-
-                // Bind the VAO
+    
                 GL30.glBindVertexArray(vao);
-                // Draw the cube
-                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 36); // 36 vertices for a cube (6 faces * 2 triangles * 3 vertices)
-                // Unbind the VAO
+                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 36);
                 GL30.glBindVertexArray(0);
             }
-
-            // Render the crosshair
+    
             renderCrosshair();
-
-            // Swap the color buffers
+    
             GLFW.glfwSwapBuffers(window);
-
-            // Poll for window events
             GLFW.glfwPollEvents();
         }
     }
+    
+    
+    
 
     private void handleInput() {
         float cameraSpeed = 0.05f;

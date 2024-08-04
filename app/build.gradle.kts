@@ -14,6 +14,8 @@ dependencies {
     implementation("org.lwjgl:lwjgl:3.2.3")
     implementation("org.lwjgl:lwjgl-glfw:3.2.3")
     implementation("org.lwjgl:lwjgl-opengl:3.2.3")
+    implementation("org.lwjgl:lwjgl-stb:3.2.3")
+    runtimeOnly("org.lwjgl:lwjgl-stb:3.2.3:natives-windows")
     runtimeOnly("org.lwjgl:lwjgl:3.2.3:natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-glfw:3.2.3:natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-opengl:3.2.3:natives-windows")
@@ -21,6 +23,7 @@ dependencies {
     implementation(files("lib/FastNoiseLite.jar"))
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.7.0")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.7.0")
+    
 }
 
 java {
